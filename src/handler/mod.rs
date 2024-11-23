@@ -4,17 +4,17 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Ok as FinishOk, Result};
 use bytes::{BufMut, Bytes};
-use debian::DebianPackage;
 use futures::{stream, StreamExt};
 use indicatif::{MultiProgress, ProgressBar, ProgressFinish, ProgressStyle};
 use reqwest::{Client, Response};
 
 pub trait RepositoryHandler {
+    type Package;
     async fn fetch_package_data(&self) -> Result<Vec<String>>;
-    fn parse_packages(&self, index_data: String) -> Vec<DebianPackage>;
-    fn create_database(&self);
-    fn store_packages(&self);
-    fn sync_repository(&self);
+    fn parse_packages(&self, index_data: String) -> Vec<Self::Package>;
+    fn create_database(&mut self) -> Result<()>;
+    fn store_packages(&self, packages: Vec<Self::Package>) -> Result<()>;
+    async fn sync_repository(&mut self) -> Result<()>;
 }
 
 pub async fn download_with_progress(tasks: Vec<String>) -> Result<Vec<Vec<u8>>> {
@@ -36,7 +36,8 @@ pub async fn download_with_progress(tasks: Vec<String>) -> Result<Vec<Vec<u8>>> 
                                 .template("{msg} {bar:60} {percent}% {bytes}/{total_bytes}")?
                                 .progress_chars("█▓▒░"),
                         )
-                        .with_finish(ProgressFinish::WithMessage("Downloaded!".into())).with_message(url.to_string());
+                        .with_finish(ProgressFinish::WithMessage("Downloaded!".into()))
+                        .with_message(url.to_string());
                     progress_binding.add(pb.clone());
 
                     let mut stream = response.bytes_stream();
@@ -75,80 +76,3 @@ pub async fn download_with_progress(tasks: Vec<String>) -> Result<Vec<Vec<u8>>> 
     let out: Vec<Vec<u8>> = (*out.lock().unwrap().clone()).to_vec();
     Ok(out)
 }
-
-/*
-def parse_packages(packages_data):
-    """Parse the Packages.gz file data and extract package info."""
-    packages = []
-    current_package = {}
-
-    for line in packages_data.splitlines():
-        if line.startswith("Package:"):
-            if current_package:
-                packages.append(current_package)
-            current_package = {"Package": line.split(":", 1)[1].strip()}
-        elif line.startswith("Version:"):
-            current_package["Version"] = line.split(":", 1)[1].strip()
-        elif line.startswith("Architecture:"):
-            current_package["Architecture"] = line.split(":", 1)[1].strip()
-        elif line.startswith("Description:"):
-            current_package["Description"] = line.split(":", 1)[1].strip()
-
-    if current_package:
-        packages.append(current_package)  # Append last package
-
-    return packages
-
-def create_database():
-    """Create the SQLite database and table."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS packages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        version TEXT NOT NULL,
-        architecture TEXT NOT NULL,
-        description TEXT
-    );
-    """)
-
-    conn.commit()
-    conn.close()
-
-def store_packages(packages):
-    """Store the parsed package data into the SQLite database."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    for package in packages:
-        cursor.execute("""
-        INSERT INTO packages (name, version, architecture, description)
-        VALUES (?, ?, ?, ?)
-        """, (package['Package'], package['Version'], package['Architecture'], package.get('Description', 'N/A')))
-
-    conn.commit()
-    conn.close()
-
-def sync_repository():
-    """Sync the Debian repository and save package info to the database."""
-    create_database()  # Ensure the database and table exist
-
-    # Step 1: Fetch and decompress the data
-    packages_data = fetch_package_data()
-    if not packages_data:
-        print("Failed to fetch data.")
-        return
-
-    # Step 2: Parse the data
-    packages = parse_packages(packages_data)
-    print(f"Parsed {len(packages)} packages.")
-
-    # Step 3: Store the data in the database
-    store_packages(packages)
-    print(f"Stored {len(packages)} packages in the database.")
-
-if __name__ == "__main__":
-    sync_repository()
-*/
